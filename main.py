@@ -156,17 +156,17 @@ async def handle_recording(
             
             for attempt in range(max_retries):
                 try:
-                    resp = await client.get(target_url, auth=auth, timeout=5.0)
+                    http_resp = await client.get(target_url, auth=auth, timeout=5.0)
                     
-                    content_type = resp.headers.get("content-type", "")
-                    content_len = len(resp.content)
-                    status_code = resp.status_code
+                    content_type = http_resp.headers.get("content-type", "")
+                    content_len = len(http_resp.content)
+                    status_code = http_resp.status_code
                     
                     print(f"[DEBUG] Attempt {attempt+1}: status={status_code}, type={content_type}, len={content_len}")
 
                     # 成功判定: 200 OK かつ 音声タイプ かつ サイズが十分
                     if status_code == 200 and "audio" in content_type and content_len > min_audio_bytes:
-                        audio_content = resp.content
+                        audio_content = http_resp.content
                         print(f"[DEBUG] Audio download success on attempt {attempt+1}")
                         break
                     
@@ -200,6 +200,10 @@ async def handle_recording(
             print(f"[STT] User: {user_text}")
         except Exception as e:
             print(f"[ERROR] STT failed: {e}")
+            if "insufficient_quota" in str(e):
+                # クレジット切れの場合は明確に伝える
+                resp.say("OpenAIのAPI利用枠を超過しています。プランを確認してください。", language="ja-JP", voice="alice")
+                return Response(content=str(resp), media_type="application/xml")
             user_text = ""
 
         if not user_text:
@@ -249,7 +253,10 @@ async def handle_recording(
             print(f"[LLM] AI: {ai_text}")
         except Exception as e:
             print(f"[ERROR] LLM failed: {e}")
-            ai_text = "すみません、少し考え込んでしまいました。"
+            if "insufficient_quota" in str(e):
+                ai_text = "OpenAIの利用枠が超過しています。"
+            else:
+                ai_text = "すみません、少し考え込んでしまいました。"
 
         # ログ保存 (Assistant)
         save_log(CallSid, current_turn, "assistant", ai_text)
