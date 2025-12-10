@@ -212,6 +212,13 @@ async def handle_recording(
             resp.record(action="/voice/handle-recording", method="POST", timeout=5, max_length=30, play_beep=True)
             return Response(content=str(resp), media_type="application/xml")
 
+        # 終了判定
+        end_keywords = ["終了", "終わり", "バイバイ", "さようなら", "切って", "大丈夫", "以上です"]
+        if any(w in user_text for w in end_keywords):
+            resp.say("お電話ありがとうございました。失礼いたします。", language="ja-JP")
+            resp.hangup()
+            return Response(content=str(resp), media_type="application/xml")
+
         # ログ保存 (User)
         conn = sqlite3.connect(DB_PATH)
         log_count = conn.execute("SELECT COUNT(*) FROM conversation_logs WHERE call_sid = ?", (CallSid,)).fetchone()[0]
@@ -232,6 +239,7 @@ async def handle_recording(
                 "あなたは親切な電話対応AIです。"
                 "日本語で話します。"
                 f"現在は {now_str} です。"
+                "ユーザーの質問には的確に答えてください。"
                 "返答は1〜2文で短くしてください。"
                 "フィラーは入れないでください。"
             )}
@@ -239,9 +247,7 @@ async def handle_recording(
         for r, c in history_rows:
             messages.append({"role": r, "content": c})
         # 今回のUser発言を追加（historyに含まれていない場合があるため明示的に追加が安全だが、今回はsave_log済み）
-        # save_logが非同期ではないのでhistory_rowsに含まれているはずだが、念のため末尾が自分でないなら追加するロジックもアリ
-        # ここではシンプルに history_rows を信じる
-
+        
         try:
             chat_completion = openai.chat.completions.create(
                 model="gpt-4o-mini", # 高速化のためminiに変更
@@ -275,7 +281,9 @@ async def handle_recording(
             speech_response.stream_to_file(output_path)
             
             if BASE_URL:
-                audio_url = f"{BASE_URL}/audio/{output_filename}"
+                # BASE_URLの末尾スラッシュを除去して連結
+                clean_base_url = BASE_URL.rstrip("/")
+                audio_url = f"{clean_base_url}/audio/{output_filename}"
             else:
                 print("[WARNING] BASE_URL not set")
 
