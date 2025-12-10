@@ -80,6 +80,28 @@ def save_log(call_sid: str, turn_id: int, role: str, content: str):
     except Exception as e:
         print(f"[ERROR] Failed to save log: {e}")
 
+# 起動時に挨拶音声を生成
+GREETING_FILE = "greeting.mp3"
+GREETING_TEXT = "お電話ありがとうございます。AIアシスタントです。ご用件をお話しください。"
+
+def generate_greeting():
+    output_path = os.path.join(AUDIO_DIR, GREETING_FILE)
+    if not os.path.exists(output_path):
+        try:
+            print("[INFO] Generating greeting audio...")
+            speech_response = openai.audio.speech.create(
+                model="tts-1",
+                voice="alloy",
+                input=GREETING_TEXT,
+                response_format="mp3"
+            )
+            speech_response.stream_to_file(output_path)
+            print("[INFO] Greeting audio generated.")
+        except Exception as e:
+            print(f"[ERROR] Failed to generate greeting: {e}")
+
+generate_greeting()
+
 # --- エンドポイント ---
 
 @app.post("/voice/entry")
@@ -87,24 +109,19 @@ async def voice_entry(request: Request):
     """
     Twilio: 着信時に呼び出されるWebhook (Start)
     """
-    # TwiML生成
     response = VoiceResponse()
     
-    # 最初の挨拶
-    # AIボイスっぽくするために、フィラーなしでハキハキと
-    initial_message = "お電話ありがとうございます。AIアシスタントです。ご用件をどうぞ。"
-    
-    # 日本語設定 (Aliceは廃止傾向なので、Google TTSやPollyなどが内部で選ばれることが多いが、
-    # シンプルに language='ja-JP' を指定)
-    # ここでは仮の音声合成出力を使うため、<Say>でテキストを読み上げるだけにします。
-    # ※100%AI生成ボイスにする場合は、ここも事前に生成した音声ファイルをPlayする方が高品質ですが、
-    #  初回応答の速度を優先して標準TTSを使います。
-    response.say(initial_message, language="ja-JP", voice="alice") # aliceは例。実際にはTwilio設定に依存
+    # 声を統一するために、事前生成した挨拶ファイルを再生
+    # BASE_URLがあればそれを使って再生、なければAlice
+    if BASE_URL:
+        clean_base_url = BASE_URL.rstrip("/")
+        greeting_url = f"{clean_base_url}/audio/{GREETING_FILE}"
+        response.play(greeting_url)
+    else:
+        # URLがない場合は仕方なくAlice
+        response.say(GREETING_TEXT, language="ja-JP", voice="alice")
 
     # 録音開始
-    # action: 録音完了後にTwilioがPOSTするURL
-    # timeout: 無音検知秒数
-    # maxLength: 最大録音秒数
     response.record(
         action="/voice/handle-recording",
         method="POST",
@@ -113,7 +130,7 @@ async def voice_entry(request: Request):
         play_beep=True
     )
     
-    # 録音がなかった場合、挨拶に戻るなどの処理を入れても良いが今回は終了
+    # 録音がなかった場合
     response.say("音声が確認できませんでした。お電話ありがとうございました。", language="ja-JP")
     
     return Response(content=str(response), media_type="application/xml")
@@ -240,6 +257,7 @@ async def handle_recording(
                 "日本語で話します。"
                 f"現在は {now_str} です。"
                 "ユーザーの質問には的確に答えてください。"
+                "回答の最後には必ず「他にご用件はありますか？」と付け加えてください。"
                 "返答は1〜2文で短くしてください。"
                 "フィラーは入れないでください。"
             )}
