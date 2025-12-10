@@ -134,11 +134,15 @@ async def handle_recording(
     try:
         # 1. 音声ファイルのダウンロード
         # TwilioのWebhookタイムアウト(15s)を考慮し、なるべく高速に処理したい
+        # Basic認証を追加 (Twilioのセキュリティ設定によっては必須)
+        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
+        
         async with httpx.AsyncClient() as client:
-            audio_response = await client.get(f"{RecordingUrl}.wav", timeout=10.0)
+            audio_response = await client.get(f"{RecordingUrl}.wav", auth=auth, timeout=10.0)
         
         if audio_response.status_code != 200:
-            print(f"[ERROR] Failed to download audio: {audio_response.status_code}")
+            print(f"[ERROR] Failed to download audio: {audio_response.status_code} - URL: {RecordingUrl}.wav")
+            # 認証エラーの可能性が高いためログに残す
             # エラー時も切断せず、再録音を促す
             resp.say("音声の取得に失敗しました。もう一度お話しください。", language="ja-JP")
             resp.record(action="/voice/handle-recording", method="POST", timeout=5, max_length=30, play_beep=True)
