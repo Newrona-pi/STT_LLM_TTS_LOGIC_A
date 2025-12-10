@@ -48,6 +48,10 @@ async def voice_entry(request: Request):
     stream = connect.stream(url=f"wss://{request.headers.get('host')}/voice/stream")
     response.append(connect)
     
+    # ストリームが切断された場合のフォールバック
+    # 正常終了時もここに来るが、即座に切れた場合はエラーの可能性が高い
+    response.say("AIとの接続が切れました。通話を終了します。", language="ja-JP", voice="alice")
+    
     return Response(content=str(response), media_type="application/xml")
 
 @app.websocket("/voice/stream")
