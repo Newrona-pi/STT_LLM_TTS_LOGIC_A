@@ -137,27 +137,56 @@ async def handle_recording(
         # Basic認証を追加 (Twilioのセキュリティ設定によっては必須)
         auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
         
-        # TwilioのRecordingURLはS3等へリダイレクトされることが多いため、follow_redirects=True が必須
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            target_url = f"{RecordingUrl}.wav" # wav形式を明示
-            print(f"[DEBUG] Downloading audio from: {target_url}")
-            
-            # 認証付きでGet
-            audio_response = await client.get(target_url, auth=auth, timeout=10.0)
+        # 1. 音声ファイルのダウンロード
+        # TwilioのWebhookタイムアウト(15s)を考慮し、なるべく高速に処理したい
+        # Basic認証を追加 (Twilioのセキュリティ設定によっては必須)
+        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
         
-        if audio_response.status_code != 200:
-            print(f"[ERROR] Failed to download audio: {audio_response.status_code} - URL: {target_url}")
-            print(f"[DEBUG] Response body: {audio_response.text[:200]}") # エラー内容の一部を出力
+        # Twilio仕様対策: 録音完了直後はファイル生成待ちのラグがあるため、リトライ処理を入れる
+        # ChatGPT推奨: リトライ回数5回, 間隔0.7秒, content-type/サイズチェック
+        
+        target_url = RecordingUrl # .wav はあえて付けない（公式推奨）
+        audio_content = None
+        max_retries = 5
+        retry_interval = 1.0 # 秒
+        min_audio_bytes = 1000 # 1KB以下はエラーとみなす
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            print(f"[DEBUG] Start downloading audio from: {target_url}")
             
-            # 認証エラーの可能性が高いためログに残す
+            for attempt in range(max_retries):
+                try:
+                    resp = await client.get(target_url, auth=auth, timeout=5.0)
+                    
+                    content_type = resp.headers.get("content-type", "")
+                    content_len = len(resp.content)
+                    status_code = resp.status_code
+                    
+                    print(f"[DEBUG] Attempt {attempt+1}: status={status_code}, type={content_type}, len={content_len}")
+
+                    # 成功判定: 200 OK かつ 音声タイプ かつ サイズが十分
+                    if status_code == 200 and "audio" in content_type and content_len > min_audio_bytes:
+                        audio_content = resp.content
+                        print(f"[DEBUG] Audio download success on attempt {attempt+1}")
+                        break
+                    
+                    # 失敗だがリトライ対象
+                    print(f"[WARNING] Retry download... (status={status_code}, type={content_type})")
+                except Exception as e:
+                    print(f"[WARNING] Exception during download: {e}")
+
+                await asyncio.sleep(retry_interval)
+        
+        if audio_content is None:
+            print(f"[ERROR] Failed to download audio after {max_retries} attempts.")
             # エラー時も切断せず、再録音を促す
-            resp.say("音声の取得に失敗しました。もう一度お話しください。", language="ja-JP")
+            resp.say("音声データの取得に手間取っています。もう一度お話しいただけますか？", language="ja-JP")
             resp.record(action="/voice/handle-recording", method="POST", timeout=5, max_length=30, play_beep=True)
             return Response(content=str(resp), media_type="application/xml")
 
         temp_input_filename = f"{AUDIO_DIR}/input_{CallSid}_{int(time.time())}.wav"
         with open(temp_input_filename, "wb") as f:
-            f.write(audio_response.content)
+            f.write(audio_content)
 
         # 2. STT (OpenAI Whisper)
         try:
