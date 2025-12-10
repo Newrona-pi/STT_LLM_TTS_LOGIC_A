@@ -293,15 +293,18 @@ async def handle_recording(
         return Response(content=str(resp), media_type="application/xml")
 
     except Exception as e:
-        # 重大なエラー（タイムアウト等を含む）
         print(f"[CRITICAL ERROR] {e}")
         import traceback
         traceback.print_exc()
         
-        # エラー発生時も切断せず、標準TTSで詫びて録音再開
-        # タイムアウトで切断される可能性はあるが、できるだけ粘る
+        # エラー詳細をログに出す
+        print(f"--- TRACEBACK ---")
+        print(traceback.format_exc())
+        print(f"-----------------")
+        
+        # 致命的なエラーでも切断せず、標準音声で詫びて録音再開
         emergency_resp = VoiceResponse()
-        emergency_resp.say("システムエラーが発生しましたが、もう一度お願いいたします。", language="ja-JP")
+        emergency_resp.say("システムエラーが発生しましたが、会話を続けます。もう一度お願いします。", language="ja-JP")
         emergency_resp.record(action="/voice/handle-recording", method="POST", timeout=5, max_length=30, play_beep=True)
         return Response(content=str(emergency_resp), media_type="application/xml")
 
