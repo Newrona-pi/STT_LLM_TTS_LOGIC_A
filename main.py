@@ -108,7 +108,7 @@ async def voice_entry(request: Request):
     response.record(
         action="/voice/handle-recording",
         method="POST",
-        timeout=2,
+        timeout=5,
         max_length=30,
         play_beep=True
     )
@@ -189,10 +189,14 @@ async def handle_recording(
     ).fetchall()
     conn.close()
 
+    # 現在日時を取得
+    now_str = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+
     messages = [
         {"role": "system", "content": (
             "あなたは親切で丁寧な電話対応AIボットです。"
             "日本語で話します。"
+            f"現在は {now_str} です。"
             "1回の返答は短め（2〜3文以内）にしてください。"
             "フィラー（えー、あのー）は絶対に入れないでください。"
             "お客様の話を聞いて、適切に応答してください。"
@@ -262,7 +266,7 @@ async def handle_recording(
     resp.record(
         action="/voice/handle-recording",
         method="POST",
-        timeout=2,
+        timeout=5,
         max_length=30,
         play_beep=True
     )
