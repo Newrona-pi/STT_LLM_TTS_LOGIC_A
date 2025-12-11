@@ -85,9 +85,9 @@ async def voice_stream(websocket: WebSocket):
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": {
                         "type": "server_vad", # サーバー側発話検知 (これぞRealtime!)
-                        "threshold": 0.6, # 感度調整 (0.5 -> 0.6) 誤検知防止
+                        "threshold": 0.5, # 感度を標準に戻す (0.6は高すぎて反応しなくなったため)
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 1000 # 無音判定を延長 (500 -> 1000)
+                        "silence_duration_ms": 500 # 標準に戻す
                     }
                 }
             }
