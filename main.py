@@ -5,6 +5,8 @@ import websockets
 import time
 import audioop
 import base64
+import asyncio
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, WebSocket, Request, Response
 from fastapi.responses import HTMLResponse
 from twilio.twiml.voice_response import VoiceResponse, Connect
@@ -23,9 +25,10 @@ OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
 SYSTEM_MESSAGE = (
     "あなたは親切で丁寧な電話対応AIアシスタントです。"
     "日本語で話してください。"
-    "明るく弾むようなトーンで、高めの声で、笑顔が伝わるような話し方をしてください。"
+    "明るく元気なトーンで、笑顔が伝わるような話し方をしてください。"
     "早口ではなく、落ち着いたテンポで話してください。"
     "ユーザーの話を親身に聞き、短く的確に答えてください。"
+    "質問に答えた後は、「他にご質問はありますか？」などと会話を続けてください。"
     "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
     "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってから end_call ツールを呼び出してください。"
 )
@@ -84,11 +87,21 @@ async def voice_stream(websocket: WebSocket):
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": SYSTEM_MESSAGE,
-                    "voice": "shimmer", # 落ち着いた女性の声
+                    "voice": "alloy", # 安定した中性的な声
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": None, # サーバーVADを完全無効化
                     "tools": [
+                        {
+                            "type": "function",
+                            "name": "get_current_date",
+                            "description": "現在の日付（日本時間）を取得する。ユーザーが「今日の日付」や「明日の日付」を聞いた場合に呼び出す。",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {},
+                                "required": []
+                            }
+                        },
                         {
                             "type": "function",
                             "name": "end_call",
@@ -229,11 +242,33 @@ async def voice_stream(websocket: WebSocket):
                             print("[INFO] AI finished speaking")
                         
                         elif event_type == "response.function_call_arguments.done":
-                            # ツール呼び出し（通話終了）の検知
-                            # call_id = msg.get("call_id")
+                            # ツール呼び出しの検知
+                            call_id = msg.get("call_id")
                             name = msg.get("name")
-                            if name == "end_call":
+                            
+                            if name == "get_current_date":
+                                # 日本時間（JST）で現在の日付を取得
+                                jst = timezone(timedelta(hours=9))
+                                now_jst = datetime.now(jst)
+                                date_str = now_jst.strftime("%Y年%m月%d日")
+                                print(f"[INFO] Providing current date: {date_str}")
+                                
+                                # ツールの実行結果を送信
+                                await openai_ws.send(json.dumps({
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": date_str
+                                    }
+                                }))
+                                # 応答生成をトリガー
+                                await openai_ws.send(json.dumps({"type": "response.create"}))
+                            
+                            elif name == "end_call":
                                 print("[INFO] AI requested to end the call.")
+                                # 「さようなら」が聞こえるように2秒待つ
+                                await asyncio.sleep(2)
                                 await websocket.close()
                                 break
                         
