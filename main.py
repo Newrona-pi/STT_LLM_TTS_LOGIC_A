@@ -83,7 +83,7 @@ async def voice_stream(websocket: WebSocket):
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": SYSTEM_MESSAGE,
-                    "voice": "nova", # 元気な女性の声に変更
+                    "voice": "shimmer", # 落ち着いた女性の声
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": None, # サーバーVADを完全無効化
@@ -144,18 +144,11 @@ async def voice_stream(websocket: WebSocket):
                             if track == "inbound":
                                 audio_payload = msg["media"]["payload"]
                                 
-                                # エコー対策: AI発話直後1秒間はVAD処理をスキップ（ただしバッファには送る）
-                                is_in_mute_window = latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 1000)
-                                
                                 # 常にバッファには送る（割り込み音声も記録するため）
                                 await openai_ws.send(json.dumps({
                                     "type": "input_audio_buffer.append",
                                     "audio": audio_payload
                                 }))
-                                
-                                # ミュート中はVAD処理をスキップ（エコーノイズ防止）
-                                if is_in_mute_window:
-                                    continue
                                 
                                 # --- 簡易VAD (音量検知) ---
                                 try:
