@@ -116,7 +116,7 @@ async def voice_stream(websocket: WebSocket):
 
             stream_sid = None
             # 自前VADパラメータ
-            VOICE_THRESHOLD = 800  # 音量閾値（調整済み）
+            VOICE_THRESHOLD = 600  # 音量閾値を600に戻す
             SILENCE_DURATION_MS = 600 # 話し終わりとみなす無音期間
             
             is_speaking = False
@@ -144,11 +144,18 @@ async def voice_stream(websocket: WebSocket):
                             if track == "inbound":
                                 audio_payload = msg["media"]["payload"]
                                 
+                                # エコー対策: AI発話直後1秒間はVAD処理をスキップ（ただしバッファには送る）
+                                is_in_mute_window = latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 1000)
+                                
                                 # 常にバッファには送る（割り込み音声も記録するため）
                                 await openai_ws.send(json.dumps({
                                     "type": "input_audio_buffer.append",
                                     "audio": audio_payload
                                 }))
+                                
+                                # ミュート中はVAD処理をスキップ（エコーノイズ防止）
+                                if is_in_mute_window:
+                                    continue
                                 
                                 # --- 簡易VAD (音量検知) ---
                                 try:
