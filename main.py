@@ -85,7 +85,7 @@ async def voice_stream(websocket: WebSocket):
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": {
                         "type": "server_vad", # サーバー側発話検知 (これぞRealtime!)
-                        "threshold": 0.55, # 0.5(自声反応)と0.6(無反応)の間を狙う
+                        "threshold": 0.5, # 感度を標準に戻す
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 500 # 標準に戻す
                     }
@@ -128,9 +128,9 @@ async def voice_stream(websocket: WebSocket):
                             # "outbound"（AI音声）が混ざると自己ループの原因になる
                             track = msg["media"].get("track")
                             
-                            # AIが発話中（最後の音声送信から500ms以内）は入力を無視する
+                            # AIが発話中（最後の音声送信から2000ms以内）は入力を無視する
                             # これによりエコーがOpenAIに届くのを防ぐ（半二重化）
-                            if latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 500):
+                            if latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 2000):
                                 continue
 
                             if track == "inbound":
