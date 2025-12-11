@@ -88,7 +88,7 @@ async def voice_stream(websocket: WebSocket):
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": SYSTEM_MESSAGE,
-                    "voice": "alloy", # 安定した中性的な声
+                    "voice": "nova", # 元気な女性の声（テスト）
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": None, # サーバーVADを完全無効化
