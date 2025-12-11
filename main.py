@@ -23,7 +23,8 @@ OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
 SYSTEM_MESSAGE = (
     "あなたは親切で丁寧な電話対応AIアシスタントです。"
     "日本語で話してください。"
-    "早口ではなく、落ち着いたトーンで話してください。"
+    "    "明るく元気なトーンで、笑顔が伝わるような話し方をしてください。"
+    "早口ではなく、落ち着いたテンポで話してください。""
     "ユーザーの話を親身に聞き、短く的確に答えてください。"
     "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
     "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってから end_call ツールを呼び出してください。"
@@ -116,11 +117,13 @@ async def voice_stream(websocket: WebSocket):
 
             stream_sid = None
             # 自前VADパラメータ
-            VOICE_THRESHOLD = 600  # 音量閾値を600に戻す
+            VOICE_THRESHOLD = 600  # 音量閾値
             SILENCE_DURATION_MS = 600 # 話し終わりとみなす無音期間
+            CONSECUTIVE_VOICE_REQUIRED = 2  # 発話開始とみなす連続検知回数
             
             is_speaking = False
             last_speech_time = 0
+            consecutive_voice_count = 0  # 連続で閾値を超えた回数
             
             # AI発話中フラグ（割り込み音声はバッファに入れるが、commitはしない）
             ai_is_speaking = False
@@ -128,7 +131,7 @@ async def voice_stream(websocket: WebSocket):
 
             async def receive_from_twilio():
                 nonlocal stream_sid
-                nonlocal is_speaking, last_speech_time
+                nonlocal is_speaking, last_speech_time, consecutive_voice_count
                 nonlocal ai_is_speaking, latest_media_timestamp
                 
                 try:
@@ -157,12 +160,19 @@ async def voice_stream(websocket: WebSocket):
                                     rms = audioop.rms(pcm_chunk, 2)
                                     
                                     if rms > VOICE_THRESHOLD:
-                                        if not is_speaking:
-                                            print(f"[VAD] Speech Detected (RMS: {rms})")
-                                            is_speaking = True
-                                        last_speech_time = time.time() * 1000
+                                        # 連続検知カウンターを増やす
+                                        consecutive_voice_count += 1
+                                        
+                                        # 連続で規定回数以上検知したら発話開始
+                                        if consecutive_voice_count >= CONSECUTIVE_VOICE_REQUIRED:
+                                            if not is_speaking:
+                                                print(f"[VAD] Speech Detected (RMS: {rms}, consecutive: {consecutive_voice_count})")
+                                                is_speaking = True
+                                            last_speech_time = time.time() * 1000
                                     else:
-                                        # 静寂
+                                        # 静寂：カウンターをリセット
+                                        consecutive_voice_count = 0
+                                        
                                         if is_speaking:
                                             # 話し終わったかも判定
                                             silence_duration = (time.time() * 1000) - last_speech_time
