@@ -118,12 +118,18 @@ async def voice_stream(websocket: WebSocket):
                         
                         if event_type == "media":
                             # 音声データ受信 (Twilio -> OpenAI)
-                            # OpenAIへの送信: input_audio_buffer.append
-                            audio_payload = msg["media"]["payload"]
-                            await openai_ws.send(json.dumps({
-                                "type": "input_audio_buffer.append",
-                                "audio": audio_payload
-                            }))
+                            # トラックを確認し、"inbound"（ユーザー音声）のみをOpenAIに送る
+                            # "outbound"（AI音声）が混ざると自己ループの原因になる
+                            track = msg["media"].get("track")
+                            if track == "inbound":
+                                audio_payload = msg["media"]["payload"]
+                                await openai_ws.send(json.dumps({
+                                    "type": "input_audio_buffer.append",
+                                    "audio": audio_payload
+                                }))
+                            else:
+                                # outboundなどは無視
+                                pass
                         
                         elif event_type == "start":
                             stream_sid = msg["start"]["streamSid"]
