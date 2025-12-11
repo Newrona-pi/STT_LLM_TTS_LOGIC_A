@@ -224,6 +224,10 @@ async def voice_stream(websocket: WebSocket):
             async def receive_from_openai():
                 nonlocal stream_sid
                 nonlocal ai_is_speaking, latest_media_timestamp
+                
+                # 通話終了リクエストフラグ
+                call_end_requested = False
+                
                 try:
                     while True:
                         data = await openai_ws.recv()
@@ -244,6 +248,13 @@ async def voice_stream(websocket: WebSocket):
                         elif event_type == "response.audio.done":
                             ai_is_speaking = False
                             print("[INFO] AI finished speaking")
+                            
+                            # 通話終了が要求されていたら、話し終わった後に切断
+                            if call_end_requested:
+                                print("[INFO] Closing call after AI finished goodbye")
+                                await asyncio.sleep(1)  # 念のため1秒待つ
+                                await websocket.close()
+                                break
                         
                         elif event_type == "response.function_call_arguments.done":
                             # ツール呼び出しの検知
@@ -270,11 +281,9 @@ async def voice_stream(websocket: WebSocket):
                                 await openai_ws.send(json.dumps({"type": "response.create"}))
                             
                             elif name == "end_call":
-                                print("[INFO] AI requested to end the call.")
-                                # 「さようなら」が完全に聞こえるように3秒待つ
-                                await asyncio.sleep(3)
-                                await websocket.close()
-                                break
+                                print("[INFO] AI requested to end the call, waiting for speech to finish")
+                                call_end_requested = True
+                                # フラグを立てるだけで、実際の切断はresponse.audio.doneで行う
                         
                         elif event_type == "error":
                             print(f"[OPENAI ERROR] {msg}")
