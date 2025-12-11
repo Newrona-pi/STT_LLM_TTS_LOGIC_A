@@ -25,10 +25,11 @@ OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
 SYSTEM_MESSAGE = (
     "あなたは親切で丁寧な電話対応AIアシスタントです。"
     "日本語で話してください。"
-    "明るく元気なトーンで、笑顔が伝わるような話し方をしてください。"
+    "女性らしい柔らかい話し方で、明るく元気なトーンで、笑顔が伝わるように話してください。"
     "早口ではなく、落ち着いたテンポで話してください。"
     "ユーザーの話を親身に聞き、短く的確に答えてください。"
     "質問に答えた後は、「他にご質問はありますか？」などと会話を続けてください。"
+    "知らない情報や最新の出来事については、正直に「申し訳ございません、その情報は把握しておりません」と答えてください。"
     "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
     "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってから end_call ツールを呼び出してください。"
 )
@@ -216,6 +217,9 @@ async def voice_stream(websocket: WebSocket):
                             
                 except Exception as e:
                     print(f"[ERROR] Twilio receive error: {e}")
+                    import traceback
+                    print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                    break
 
             async def receive_from_openai():
                 nonlocal stream_sid
@@ -277,6 +281,9 @@ async def voice_stream(websocket: WebSocket):
 
                 except Exception as e:
                     print(f"[ERROR] OpenAI receive error: {e}")
+                    import traceback
+                    print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                    break
 
             await asyncio.gather(receive_from_twilio(), receive_from_openai())
 
