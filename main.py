@@ -83,10 +83,23 @@ async def voice_stream(websocket: WebSocket):
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": SYSTEM_MESSAGE,
-                    "voice": "alloy",
+                    "voice": "shimmer", # 女性の声に変更
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
-                    "turn_detection": None # サーバーVADを完全無効化（手動トリガーのみ）
+                    "turn_detection": None, # サーバーVADを完全無効化
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "end_call",
+                            "description": "通話を終了する。ユーザーから「さようなら」「ありがとう」などで会話を終える意思表示があった場合に呼び出す。",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {},
+                                "required": []
+                            }
+                        }
+                    ],
+                    "tool_choice": "auto"
                 }
             }
             await openai_ws.send(json.dumps(session_update))
@@ -103,8 +116,8 @@ async def voice_stream(websocket: WebSocket):
 
             stream_sid = None
             # 自前VADパラメータ
-            VOICE_THRESHOLD = 600  # 音量閾値（要調整）
-            SILENCE_DURATION_MS = 600 # 話し終わりとみなす無音期間（早める）
+            VOICE_THRESHOLD = 1000  # 音量閾値を上げてノイズ誤検知を防ぐ
+            SILENCE_DURATION_MS = 600 # 話し終わりとみなす無音期間
             
             is_speaking = False
             last_speech_time = 0
@@ -128,7 +141,6 @@ async def voice_stream(websocket: WebSocket):
                             track = msg["media"].get("track")
                             
                             # AIが発話中（直後）は無視（エコー対策）
-                            # サーバーVADを切ったので、ここは短め(500ms)でも効果あるはずだが念のため1秒
                             if latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 1000):
                                 continue
 
@@ -144,14 +156,6 @@ async def voice_stream(websocket: WebSocket):
                                 # --- 簡易VAD (音量検知) ---
                                 try:
                                     chunk = base64.b64decode(audio_payload)
-                                    # ulawなので詳細な音量ではないが、変化はわかる。
-                                    # 正確にはpcmに変換すべきだが、簡易RMSで判定トライ
-                                    # ulawのRMS計算はaudioopでは直接できないため、簡易的にバイト値の変動を見るか
-                                    # ここでは厳密な変換より、Twilioからのデータ有無を信じる
-                                    # 実はaudioop.rms(chunk, 1) は PCM用だが、ulawでも「無音=FF or 7F」で一定、「声=バラバラ」なので
-                                    # 変化量を見るのが適切だが、簡易的に `len(chunk)` は常に一定なので
-                                    # audioop.ulaw2lin でリニアPCMにしてから rms を測るのが正解
-                                    
                                     pcm_chunk = audioop.ulaw2lin(chunk, 2)
                                     rms = audioop.rms(pcm_chunk, 2)
                                     
@@ -174,7 +178,6 @@ async def voice_stream(websocket: WebSocket):
                                                 await openai_ws.send(json.dumps({"type": "response.create"}))
                                                 
                                 except Exception as e:
-                                    # VADエラー時は無視して流す
                                     pass
 
                             else:
@@ -209,6 +212,15 @@ async def voice_stream(websocket: WebSocket):
                                     "streamSid": stream_sid,
                                     "media": {"payload": audio_delta}
                                 })
+                        
+                        elif event_type == "response.function_call_arguments.done":
+                            # ツール呼び出し（通話終了）の検知
+                            # call_id = msg.get("call_id")
+                            name = msg.get("name")
+                            if name == "end_call":
+                                print("[INFO] AI requested to end the call.")
+                                await websocket.close()
+                                break
                         
                         elif event_type == "error":
                             print(f"[OPENAI ERROR] {msg}")
