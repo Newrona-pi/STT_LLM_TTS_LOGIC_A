@@ -22,6 +22,7 @@ SYSTEM_MESSAGE = (
     "日本語で話してください。"
     "早口ではなく、落ち着いたトーンで話してください。"
     "ユーザーの話を親身に聞き、短く的確に答えてください。"
+    "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
     "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってください。"
 )
 
@@ -84,9 +85,9 @@ async def voice_stream(websocket: WebSocket):
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": {
                         "type": "server_vad", # サーバー側発話検知 (これぞRealtime!)
-                        "threshold": 0.5,
+                        "threshold": 0.6, # 感度調整 (0.5 -> 0.6) 誤検知防止
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 500 # 500msの無音でターン終了とみなす
+                        "silence_duration_ms": 1000 # 無音判定を延長 (500 -> 1000)
                     }
                 }
             }
