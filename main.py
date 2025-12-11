@@ -206,6 +206,9 @@ async def voice_stream(websocket: WebSocket):
     except Exception as e:
         print(f"[CRITICAL] WebSocket Connection Failed: {e}")
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except RuntimeError:
+            pass
 
 
