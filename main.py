@@ -107,8 +107,14 @@ async def voice_stream(websocket: WebSocket):
 
             stream_sid = None
 
+            # 半二重通信（エコー防止）ようの制御変数
+            # AIが喋っている間（および直後）はマイク入力を無視する
+            import time
+            latest_media_timestamp = 0
+
             async def receive_from_twilio():
                 nonlocal stream_sid
+                nonlocal latest_media_timestamp
                 try:
                     while True:
                         data = await websocket.receive_text()
@@ -121,6 +127,12 @@ async def voice_stream(websocket: WebSocket):
                             # トラックを確認し、"inbound"（ユーザー音声）のみをOpenAIに送る
                             # "outbound"（AI音声）が混ざると自己ループの原因になる
                             track = msg["media"].get("track")
+                            
+                            # AIが発話中（最後の音声送信から500ms以内）は入力を無視する
+                            # これによりエコーがOpenAIに届くのを防ぐ（半二重化）
+                            if latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 500):
+                                continue
+
                             if track == "inbound":
                                 audio_payload = msg["media"]["payload"]
                                 await openai_ws.send(json.dumps({
@@ -144,6 +156,7 @@ async def voice_stream(websocket: WebSocket):
 
             async def receive_from_openai():
                 nonlocal stream_sid
+                nonlocal latest_media_timestamp
                 try:
                     while True:
                         data = await openai_ws.recv()
@@ -152,6 +165,9 @@ async def voice_stream(websocket: WebSocket):
 
                         # AIの音声データ受信 (OpenAI -> Twilio)
                         if event_type == "response.audio.delta":
+                            # 発話中はタイムスタンプを更新し続ける
+                            latest_media_timestamp = time.time() * 1000
+
                             audio_delta = msg.get("delta")
                             if audio_delta and stream_sid:
                                 await websocket.send_json({
@@ -162,20 +178,15 @@ async def voice_stream(websocket: WebSocket):
                                     }
                                 })
                         
+                        elif event_type == "response.audio.done":
+                             # 発話完了イベントだが、エコーのラグを考慮して
+                             # タイムスタンプのリセットはせず、タイムアウトで自然に解除させる
+                             pass
+                        
                         # ユーザーの発話を検知した時 (Barge-in / 割り込み)
-                        # speech_started が来たら、現在再生中の音声を止めるために Twilio に "clear" を送る
+                        # 半二重モードのため、基本的には反応させない（AI発話を優先）
                         elif event_type == "input_audio_buffer.speech_started":
-                            print("[INFO] User speech started - Interrupting AI")
-                            if stream_sid:
-                                await websocket.send_json({
-                                    "event": "clear",
-                                    "streamSid": stream_sid
-                                })
-                                # OpenAI側にも、現在生成中のレスポンスをキャンセルする指示を送るべきだが
-                                # VADモードなら自動で止まることもある。明示的に cancel を送るのがベスト
-                                await openai_ws.send(json.dumps({
-                                    "type": "response.cancel"
-                                }))
+                             print("[INFO] Speech detected (Ignored/Managed by half-duplex logic)")
 
                         # ログ出力用
                         elif event_type == "error":
