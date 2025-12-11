@@ -32,7 +32,7 @@ SYSTEM_MESSAGE = (
     "質問に答えた後は、「他にご質問はありますか？」などと会話を続けてください。"
     "知らない情報や最新の出来事については、正直に「申し訳ございません、その情報は把握しておりません」と答えてください。"
     "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
-    "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってから end_call ツールを呼び出してください。"
+    "もしユーザーが会話を終了したそうなら、必ず丁寧にお別れの挨拶を完全に言い終わってから、end_call ツールを呼び出してください。挨拶を言う前にツールを呼び出さないでください。"
 )
 
 app = FastAPI()
@@ -107,7 +107,7 @@ async def voice_stream(websocket: WebSocket):
                         {
                             "type": "function",
                             "name": "end_call",
-                            "description": "通話を終了する。ユーザーから「さようなら」「ありがとう」などで会話を終える意思表示があった場合に呼び出す。",
+                            "description": "通話を終了する。重要：必ず「さようなら」やお別れの挨拶を言い終わってから、このツールを呼び出すこと。挨拶を言う前に呼び出さないこと。",
                             "parameters": {
                                 "type": "object",
                                 "properties": {},
@@ -271,8 +271,8 @@ async def voice_stream(websocket: WebSocket):
                             
                             elif name == "end_call":
                                 print("[INFO] AI requested to end the call.")
-                                # 「さようなら」が聞こえるように2秒待つ
-                                await asyncio.sleep(2)
+                                # 「さようなら」が完全に聞こえるように3秒待つ
+                                await asyncio.sleep(3)
                                 await websocket.close()
                                 break
                         
