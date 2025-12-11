@@ -131,7 +131,7 @@ async def voice_stream(websocket: WebSocket):
                             # AIが発話中（最後の音声送信から2000ms以内）は入力を無視する
                             # これによりエコーがOpenAIに届くのを防ぐ（半二重化）
                             if latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 2000):
-                                print(f"[DEBUG] Ignored user audio (Half-duplex mute active)")
+                                # print(f"[DEBUG] Ignored user audio (Half-duplex mute active)")
                                 continue
 
                             if track == "inbound":
