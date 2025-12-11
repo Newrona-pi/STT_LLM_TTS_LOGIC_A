@@ -26,7 +26,7 @@ SYSTEM_MESSAGE = (
     "早口ではなく、落ち着いたトーンで話してください。"
     "ユーザーの話を親身に聞き、短く的確に答えてください。"
     "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
-    "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってください。"
+    "もしユーザーが会話を終了したそうなら、丁寧にお別れを言ってから end_call ツールを呼び出してください。"
 )
 
 app = FastAPI()
@@ -83,7 +83,7 @@ async def voice_stream(websocket: WebSocket):
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": SYSTEM_MESSAGE,
-                    "voice": "shimmer", # 女性の声に変更
+                    "voice": "nova", # 元気な女性の声に変更
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
                     "turn_detection": None, # サーバーVADを完全無効化
@@ -116,19 +116,20 @@ async def voice_stream(websocket: WebSocket):
 
             stream_sid = None
             # 自前VADパラメータ
-            VOICE_THRESHOLD = 1000  # 音量閾値を上げてノイズ誤検知を防ぐ
+            VOICE_THRESHOLD = 800  # 音量閾値（調整済み）
             SILENCE_DURATION_MS = 600 # 話し終わりとみなす無音期間
             
             is_speaking = False
             last_speech_time = 0
             
-            # エコー対策用: AI発話直後の無視期間
+            # AI発話中フラグ（割り込み音声はバッファに入れるが、commitはしない）
+            ai_is_speaking = False
             latest_media_timestamp = 0
 
             async def receive_from_twilio():
                 nonlocal stream_sid
                 nonlocal is_speaking, last_speech_time
-                nonlocal latest_media_timestamp
+                nonlocal ai_is_speaking, latest_media_timestamp
                 
                 try:
                     while True:
@@ -139,15 +140,11 @@ async def voice_stream(websocket: WebSocket):
                         
                         if event_type == "media":
                             track = msg["media"].get("track")
-                            
-                            # AIが発話中（直後）は無視（エコー対策）
-                            if latest_media_timestamp > 0 and (time.time() * 1000 - latest_media_timestamp < 1000):
-                                continue
 
                             if track == "inbound":
                                 audio_payload = msg["media"]["payload"]
                                 
-                                # 常にバッファには送る
+                                # 常にバッファには送る（割り込み音声も記録するため）
                                 await openai_ws.send(json.dumps({
                                     "type": "input_audio_buffer.append",
                                     "audio": audio_payload
@@ -173,9 +170,12 @@ async def voice_stream(websocket: WebSocket):
                                                 print(f"[VAD] Silence detected ({silence_duration}ms) -> Committing")
                                                 is_speaking = False
                                                 
-                                                # 発話終了とみなしてコミット＆レスポンス生成
-                                                await openai_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-                                                await openai_ws.send(json.dumps({"type": "response.create"}))
+                                                # AI発話中でなければコミット＆レスポンス生成
+                                                if not ai_is_speaking:
+                                                    await openai_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                                                    await openai_ws.send(json.dumps({"type": "response.create"}))
+                                                else:
+                                                    print("[VAD] AI is speaking, buffering user input for later")
                                                 
                                 except Exception as e:
                                     pass
@@ -196,7 +196,7 @@ async def voice_stream(websocket: WebSocket):
 
             async def receive_from_openai():
                 nonlocal stream_sid
-                nonlocal latest_media_timestamp
+                nonlocal ai_is_speaking, latest_media_timestamp
                 try:
                     while True:
                         data = await openai_ws.recv()
@@ -204,6 +204,7 @@ async def voice_stream(websocket: WebSocket):
                         event_type = msg.get("type")
 
                         if event_type == "response.audio.delta":
+                            ai_is_speaking = True
                             latest_media_timestamp = time.time() * 1000
                             audio_delta = msg.get("delta")
                             if audio_delta and stream_sid:
@@ -212,6 +213,10 @@ async def voice_stream(websocket: WebSocket):
                                     "streamSid": stream_sid,
                                     "media": {"payload": audio_delta}
                                 })
+                        
+                        elif event_type == "response.audio.done":
+                            ai_is_speaking = False
+                            print("[INFO] AI finished speaking")
                         
                         elif event_type == "response.function_call_arguments.done":
                             # ツール呼び出し（通話終了）の検知
