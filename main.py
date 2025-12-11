@@ -23,7 +23,7 @@ OPENAI_WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
 SYSTEM_MESSAGE = (
     "あなたは親切で丁寧な電話対応AIアシスタントです。"
     "日本語で話してください。"
-    "明るく元気なトーンで、笑顔が伝わるような話し方をしてください。"
+    "明るく弾むようなトーンで、高めの声で、笑顔が伝わるような話し方をしてください。"
     "早口ではなく、落ち着いたテンポで話してください。"
     "ユーザーの話を親身に聞き、短く的確に答えてください。"
     "ユーザーが話し終わるまで十分に待ってください。相槌は最小限にし、自身の発話が割り込まないように注意してください。"
@@ -54,8 +54,8 @@ async def voice_entry(request: Request):
     response.append(connect)
     
     # ストリームが切断された場合のフォールバック
-    # 正常終了時もここに来るが、即座に切れた場合はエラーの可能性が高い
-    response.say("AIとの接続が切れました。通話を終了します。", language="ja-JP", voice="alice")
+    # OpenAIが「さようなら」を言ってから切断するので、ここでは何も言わない
+    # response.say("AIとの接続が切れました。通話を終了します。", language="ja-JP", voice="alice")
     
     return Response(content=str(response), media_type="application/xml")
 
